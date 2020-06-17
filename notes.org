@@ -32,5 +32,9 @@
    cargo new numbers
    #+end_src
 
+** Rust Crates
+Rust distinguishes libraries from executable binaries by the presence of a lib.rs and main.rs
+The differences between them are largely nominal and it is common practice to create a library alongside a binary
 
 ** Syntax and Structure
+
