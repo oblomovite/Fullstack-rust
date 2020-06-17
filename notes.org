@@ -1,0 +1,36 @@
+* Making your FIrst Rust App
+** Setup
+   *** My setup uses NixOS - for nix based development use direnv/nix-direnv + lorri as replacements for nix-shell to configure project local settings
+   
+   Create shell.nix and .envrc 
+   #+begin_src sh
+   nixify .
+   #+end_src
+
+   Or
+   #+begin_src sh
+   lorri init
+   #+end_src
+   
+   *** Setup a new Rust project
+   
+   Install Rustip + IDE amenities
+   #+begin_src sh
+   % curl https://sh.rustup.rs -sSf | sh
+   % rustup update
+   % rustup component add rls rust-analysis rust-src
+   % which rls
+   #+end_src
+
+   Define the toolchain version
+   #+begin_src sh
+   rustup default stable
+   #+end_src
+
+   Scaffold new project - e.g. numbers
+   #+begin_src sh
+   cargo new numbers
+   #+end_src
+
+
+** Syntax and Structure
