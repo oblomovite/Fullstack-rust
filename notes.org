@@ -36,5 +36,104 @@
 Rust distinguishes libraries from executable binaries by the presence of a lib.rs and main.rs
 The differences between them are largely nominal and it is common practice to create a library alongside a binary
 
-** Syntax and Structure
+Run/build the project with 
 
+#+begin_src sh
+cargo run
+#+end_src
+
+** Syntax and Structure
+   To get a handle on a function from another module use the double colon \::\ operator using 
+   <crate>::<module/function>::<module/function>::... to get to the desired function
+   
+   Note that the number of ::'s to use depends on the depth of the desired module in a given crate.
+
+   In the case of the numbers project - say_hello() is on the top-level so numbers::say_hello() 
+   will achieve the desired function
+
+   #+begin_src rust
+   fn main() {
+       // println!("Hello, world!");
+
+       // refactor code to use function definition in lib.rs
+       numbers::say_hello();
+
+   }
+   #+end_src
+
+   Example: Print numbers 1 - 5 using 'pretty printing' with the "{}" syntax
+   Note that formatted printing is possible because a particular type system implements the /Display/ trait.
+   Debug printing is similarly available to types with the /Debug/ trait.
+   
+   Rust abstracts the idea of iteration to another trait, /Iterator/.
+   Call /iter()/ on the numbers array to coerce it into an /iterator/.
+
+   Rust types implement functions that can operate on themselves. The dot syntax is just syntactic sugar for
+   a direct function call with the object as the first argument.
+
+   #+begin_src rust
+   pub fn numbers() {
+
+       let numbers = [1, 2, 3, 4, 5]; //declare an array
+       for n in numbers.iter() { //iterate through array, binding n to each return value
+           println!("{}", n); //pretty print each number on a newline
+       }
+   }
+   #+end_src
+   
+   *** Trait systems:
+   Traits are similar to interfaces in that they define which functions are available to a particular type.
+   Whether a type implements a particular trait must be stated explicitly rather than by implicitly satisfying
+   the functional requirements.
+   
+
+   *** Defining Array Types
+   By default variables are immutable.
+   Rust infers the type of /numbers/ based on the value used to initialize it.
+
+   Arrays in Rust are a /homogeneous-container/ - all elements have the same type - with a fixed size. This allows
+   it to be stack allocated. The ability to ensure data is stack allocated rather than heap allocated is one of the 
+   areas in which Rust allows you to decide what trade-offs you want to make.
+   
+
+
+   *** Rust Trick
+   To see the type Rust has inferred use the following:
+   #+begin_src rust
+   let () = numbers;
+   #+end_src
+
+   *** Compiler inference
+   The compiler will also infer the type of elements in the array. In this case, it will generalize to /[integer]/ - of 
+   which the default is /i32/ - a singed integer which takes 32 bits of space.
+   
+   To tell the compiler a given type preferance for a variable:
+
+   #+begin_src rust
+   let numbers = [1u8, 2, 3, 4, 5];
+   #+end_src
+
+   Or explicitly, using the colon-annotation:
+ 
+   Note that the size is part of the type declaration so two arrays consisting of the same type of elements but of different sizes
+   will have equal types.
+   #+begin_src rust
+   let numbers: [u8; 5] = [1u8, 2, 3, 4, 5];
+   #+end_src
+
+
+   *** Vectors
+   Vectors are similar to arrays in that both types store a single tyoe if element in a contiguous memory block.
+   The memory used by vector however is heap allocated, since its size is not known ahead of time and may change 
+   as new elements are added (grow and shrink during runtime). 
+
+
+   Example: convert numbers program using the vec! macro with the Vec type:
+    #+begin_src rust
+    pub fn numbers_vec() {
+        let numbers = vec![1, 2, 3, 4, 5];
+        for n in numbers { // no need to call .iter() explicitly, the Vec<T> type has a trait for this.
+            println!("{}", n);
+        }
+    }
+    #+end_src
