@@ -1,0 +1,292 @@
+* Making your FIrst Rust App
+** Setup
+   *** My setup uses NixOS - for nix based development use direnv/nix-direnv + lorri as replacements for nix-shell to configure project local settings
+   
+   Create shell.nix and .envrc 
+   #+begin_src sh
+   nixify .
+   #+end_src
+
+   Or
+   #+begin_src sh
+   lorri init
+   #+end_src
+   
+   *** Setup a new Rust project
+   
+   Install Rustip + IDE amenities
+   #+begin_src sh
+   % curl https://sh.rustup.rs -sSf | sh
+   % rustup update
+   % rustup component add rls rust-analysis rust-src
+   % which rls
+   #+end_src
+
+   Define the toolchain version
+   #+begin_src sh
+   rustup default stable
+   #+end_src
+
+   Scaffold new project - e.g. numbers
+   #+begin_src sh
+   cargo new numbers
+   #+end_src
+
+** Rust Crates
+Rust distinguishes libraries from executable binaries by the presence of a lib.rs and main.rs
+The differences between them are largely nominal and it is common practice to create a library alongside a binary
+
+Run/build the project with 
+
+#+begin_src sh
+cargo run
+#+end_src
+
+** Syntax and Structure
+   To get a handle on a function from another module use the double colon \::\ operator using 
+   <crate>::<module/function>::<module/function>::... to get to the desired function
+   
+   Note that the number of ::'s to use depends on the depth of the desired module in a given crate.
+
+   In the case of the numbers project - say_hello() is on the top-level so numbers::say_hello() 
+   will achieve the desired function
+
+   #+begin_src rust
+   fn main() {
+       // println!("Hello, world!");
+
+       // refactor code to use function definition in lib.rs
+       numbers::say_hello();
+
+   }
+   #+end_src
+
+   Example: Print numbers 1 - 5 using 'pretty printing' with the "{}" syntax
+   Note that formatted printing is possible because a particular type system implements the /Display/ trait.
+   Debug printing is similarly available to types with the /Debug/ trait.
+   
+   Rust abstracts the idea of iteration to another trait, /Iterator/.
+   Call /iter()/ on the numbers array to coerce it into an /iterator/.
+
+   Rust types implement functions that can operate on themselves. The dot syntax is just syntactic sugar for
+   a direct function call with the object as the first argument.
+
+   #+begin_src rust
+   pub fn numbers() {
+
+       let numbers = [1, 2, 3, 4, 5]; //declare an array
+       for n in numbers.iter() { //iterate through array, binding n to each return value
+           println!("{}", n); //pretty print each number on a newline
+       }
+   }
+   #+end_src
+   
+   *** Trait systems:
+   Traits are similar to interfaces in that they define which functions are available to a particular type.
+   Whether a type implements a particular trait must be stated explicitly rather than by implicitly satisfying
+   the functional requirements.
+   
+
+   *** Defining Array Types
+   By default variables are immutable.
+   Rust infers the type of /numbers/ based on the value used to initialize it.
+
+   Arrays in Rust are a /homogeneous-container/ - all elements have the same type - with a fixed size. This allows
+   it to be stack allocated. The ability to ensure data is stack allocated rather than heap allocated is one of the 
+   areas in which Rust allows you to decide what trade-offs you want to make.
+   
+
+
+   *** Rust Trick
+   To see the type Rust has inferred use the following:
+   #+begin_src rust
+   let () = numbers;
+   #+end_src
+
+   *** Compiler inference
+   The compiler will also infer the type of elements in the array. In this case, it will generalize to /[integer]/ - of 
+   which the default is /i32/ - a singed integer which takes 32 bits of space.
+   
+   To tell the compiler a given type preferance for a variable:
+
+   #+begin_src rust
+   let numbers = [1u8, 2, 3, 4, 5];
+   #+end_src
+
+   Or explicitly, using the colon-annotation:
+ 
+   Note that the size is part of the type declaration so two arrays consisting of the same type of elements but of different sizes
+   will have equal types.
+   #+begin_src rust
+   let numbers: [u8; 5] = [1u8, 2, 3, 4, 5];
+   #+end_src
+
+
+   *** Vectors
+   Vectors are similar to arrays in that both types store a single tyoe if element in a contiguous memory block.
+   The memory used by vector however is heap allocated, since its size is not known ahead of time and may change 
+   as new elements are added (grow and shrink during runtime). 
+
+
+   Example: convert numbers program using the vec! macro with the Vec type:
+    #+begin_src rust
+    pub fn numbers_vec() {
+        let numbers = vec![1, 2, 3, 4, 5];
+        for n in numbers { // no need to call .iter() explicitly, the Vec<T> type has a trait for this.
+            println!("{}", n);
+        }
+    }
+    #+end_src
+
+
+** Function Arguments
+
+#+begin_src rust
+pub fn print() {
+    let numbers = [1, 2, 3, 4, 5];
+    output_sequence(numbers);
+}
+
+fn output_sequence(numbers: [u8; 5]) {
+    for n in numbers.iter() {
+        println!("{}", n);
+    }
+}
+#+end_src
+
+Rust has a few different modes of passing arguments to functions. 
+Rust distinguishes between
+- A function that /temporarily/ having access to a variable (borrowing)
+  having /ownership/ of a variable
+
+The default behavior is for a function to take /input by value and hence ownership/
+of the variable is moved into the function. One exception to note is types which 
+implement the /copy/ trait like Vec<T>.
+
+Note that this won't work due to Rust's ownership rules:
+
+#+begin_src rust
+pub fn print() {
+    let numbers = vec![1, 2, 3, 4, 5];
+    output_sequence(numbers);
+    output_sequence(numbers);
+}
+
+fn output_sequence(numbers: Vec<u8>) {
+    for n in numbers {
+        println!("{}", n);
+    }
+}
+#+end_src
+
+This is due to the change in ownership of the numbers variable. Since it is of type Vec<u8> which does implement the copy trait so the moved value cannot be accessed 
+due to restrictions on its ownership.
+
+** A Type Signature for Arrays and Vectors
+To get over the limitations inherent in Vectors and Arrays, /Slices/ are an available abstraction. 
+Slices are a dynamically sized view into a sequence. Therefore, you can have a slice which references an array or a vector and treat them the same.
+
+Example:
+
+Note that the major difference here is that we are no longer transferring ownership into the function
+/output_sequence/, instead we are lending read-only access to this function. The data is /borrowed/ for the duration
+of the function's execution. 
+#+begin_src rust
+pub fn print() {
+    let vector_numbers = vec![1, 2, 3, 4, 5];
+    output_sequence(&vector_numbers); //& can be thought of as read-only access
+
+    let array_numbers = [1, 2, 3, 4, 5];
+    output_sequence(&array_numbers);
+}
+
+fn output_sequence(numbers: &[u8]) {
+    for n in numbers {
+        println!("{}", n);
+    }
+}
+#+end_src
+
+The Rust compilation model does not allow functions to directly take arguments of an unknown size. In order to access
+this slice of unknown size with something of a known size we use /indirection/ and pass a reference to the slice rather
+than the slice itself.
+
+Note that the size of the reference to the slice is known at compile time to be the size of the pointer plus the length of the slice.
+
+** Construction A Vector of Numbers
+
+***Range Object
+The Range Object can be constructed with /start/../end/ or /start/../=end/. The /=/ makes the Range include the /end/.
+E.g. to generate the numbers /1 to limit/ we would use 1..=limit.
+E.g. These are often used in slices as follows: 
+#+begin_src rust
+let numbers = [1, 2, 3, 4, 5];
+let subset &numbers[1..3];
+#+end_src
+
+Here /subset/ is a slice of length 3-1=2 which starts at index 1, hence it is the slice [2,3]
+
+
+Example:
+Note that a Vector created with new is the same as one created with vec![], and does not allocate any memory unless it
+contains something.
+
+Note that in generate_sequence() function we return the /numbers/ value without a /return/ statement.
+Return can used to exit execution early but leaving off the semicolon is considered /idiomatic/ Rust.
+#+begin_src rust
+pub fn print(limit: u8) {
+    let numbers = generate_sequence(limit); //bind a variable tp the result of generate_sequence with given limit argument
+    output_sequence(&numbers);
+}
+
+fn generate_sequence(limit: u8) -> Vec<u8> { //note explicit return type of Vec<u8>
+
+    let mut numbers = Vec::new(); // mut is a property on the object/reference that allows mutation of the reference
+    for n in 1..=limit { // use a Range object instead of an Iterator (InclusiveRange in this case)
+        numbers.push(n); // note this is only possible because numbers is mutable, otherwise pushing to the reciever
+                        // would cause a compiler error
+    }
+    numbers // The lack of a semicolon means to return this value
+}
+
+fn output_sequence(numbers: &[u8]) {
+    for n in numbers {
+        println!("{}", n);
+    }
+}
+#+end_src
+
+
+Improved Idiomatic Rust with Collect
+
+/collect/ can be used to turn one collection into another - which is being done below by converting a range into a vector
+#+begin_src rust
+fn generate_sequence(limit: u8) -> Vec<u8> { 
+    (1..=limit=).collect()
+}
+#+end_src
+
+***Turbofish syntax
+To explicitly type a return using collect, use the /Turbofish/ syntax. E.g. collect::<SomeType>()
+
+
+** Testing the Code
+Example of a basic unit test:
+
+The test is just a normal function with a special attribute /#[test]/ annotation. 
+
+Attributes come in two forms: /#[]/ and /#![]/ which annotate the preceeding item.
+
+#+begin_src rust
+#[test]
+fn gnerate_sequence_should_work() {
+    let result = generate_sequence(3);
+    assert_eq!(result, &[1, 2, 3]);
+}
+#+end_src
+
+Run Tests in Cargo:
+#+begin_src sh
+cargo test
+#+end_src
+
