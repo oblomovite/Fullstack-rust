@@ -26,6 +26,9 @@
 #   RUST_BACKTRACE = 1;
 # }
 
+
+with import <nixpkgs> {};
+
 let
   rust-version = "1.40.0";
 
@@ -54,5 +57,5 @@ let
 in
   pkgs.mkShell {
     name = "rust-dev";
-    buildInputs = [ rust cargo ];
+    buildInputs = [ rust cargo rls];
   }

@@ -1,0 +1,13 @@
+[package]
+name = "messages-actix"
+version = "0.1.0"
+authors = ["0sm1n0g <robert.sheynin@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "1.0" # web-app framework
+env_logger = "0.6" # event logging
+serde = { version = "1.0", features = ["derive"] } # serialization/deserialization
+serde_json = "1.0" # marshaling serialization/deserialization to/from JSON

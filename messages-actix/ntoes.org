@@ -1,0 +1,303 @@
+* Making a Web App with Actix
+** Adding dependencies
+Dependencies are specified in the Cargo.toml file as follows:
+#+begin_src toml
+[package]
+name = "messages-actix"
+version = "0.1.0"
+authors = ["0sm1n0g <robert.sheynin@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "1.0" # web-app framework
+env_logger = "0.6" # event logging
+serde = { version = "1.0", features = ["derive"] } # serialization/deserialization
+serde_json = "1.0" # marshaling serialization/deserialization to/from JSON
+#+end_src
+
+***Note on Import Modules and Crates
+Crate names are allowed to contain hyphens and underscores, but identifieres in Rust are not allowed to contain hypens.
+Therefore, if you use a crate name with an underscire the compiler knows to look for a crate with a hypen if one with an underscore cannot be found.
+
+***Note on Result Type
+It is possible for the main function to return a /Result/ primitive.
+/Result/ is one of the primary error handling primitives that Rust provides.
+
+** Aggregate Data Types
+The primary mechanisms for creating aggregate data types in Rust are /enums/ and /structs/. In theoretical terms, theses are aggregates of other types where strucuts represent product types and enums represent sum types.
+
+Enums in Rust can contain data and are therefore related to algebraic data types in functional languages.
+
+/Result/ is an example of an Enum of the form
+
+Result is defined as having exactly two states: The /Ok/ variant, and the /Err/ variant.
+#+begin_src rust
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+#+end_src
+
+** /Result/
+Result is also an example of a generic type because it is parameterized by two type variables /T/ and /E/. 
+
+The names of variants can be referred to just like other items that live within some outer structure using the /::/ operator. Therefore, /Result::Ok(true)/ would construct the /Ok/ variant of the type /Result<bool,E>/ where /E/ would need to be further specified by the context.
+
+In our main function we return the type /std::io::Result<()>/ which is defined as
+#+begin_src rust
+type Result<T> = Result<T, std::io::Error>;
+#+end_src
+This is a /struct/ defined in the std::io module used for representing errors from I/O operations. This is called /Type Aliasing/, which is used for syntactic convenience when using fixed variants of a given type. In the above example, Result is aliased to a predefined Error variant meaning only  /T/ will require inference.
+
+
+** Ok
+The /Ok/ variant has type /()/ which is known as the /empty/ /tuple/. This result type essentially only descriminates successes from failures similiar to how C programs return 0 for a success or a non-zero for failure.
+
+
+** Starting the App
+
+Main Function:
+#+begin_src rust
+use messages_actix::MessageApp; // include our module
+
+fn main()  -> std::io::Result<()> {
+    std::env::set_var("RUST_LOG", "actix_web=info"); // configure basic, standard logging by setting an environment variable
+    env_logger::init(); // turn on logging with configuration above
+    let app = MessageApp::new(8080); // bind the result of the variable app to a new instance of MessageApp on port 8080
+
+// The lack of a semi-colon denotes that the main function will return the result of this execution. I.e. run() must return a result.
+    app.run() 
+}
+#+end_src
+
+** Handling our First Request
+
+Split the code into main and lib.
+
+lib.rs:
+
+#+begin_src rust
+#[macro_use] // Import macro
+extern crate actix_web; //import actix_web
+
+use actix_web::{middleware, web, App, HttpRequest, HttpServer, Result};
+use serde::Serialize;
+#+end_src
+
+** Creating our App
+
+lib.rs:
+#+begin_src rust
+pub struct MessageApp {
+    port: u16;
+}
+#+end_src
+
+Recall that /struct/ is another /primary/ /aggregate/ /data/ /type/ in Rust besides /Enums/.
+
+Structs contain /member data/ which can be of any type. In this case we have one member named /port/ of type /u16/. The /pub/ specifier before the struct keyword means that this type will be publicly exported by our library.
+
+***Access Modifiers
+Each member has its own privacy which is not exported by default, meaning each member will have to be explicitly made public with the /pub/ modifier to be made available to the rest of the project, otherwise it will not be accessible outside the file.
+
+***Generic Structs
+Similar to /Enums/, structs can also be generic over the types of data they contain.
+For example, /Vec<T>/ is a struct called /Vec/ which has one generic type parameter.
+
+** Adding behavior to our data
+Rust has a strong seperation of /data/ and /functionality/. The functionality or /methods/ associated with a type are defined in an /impl/ block. These blocks are used for adding functionality to types as well as for implementing traits.
+
+#+begin_src rust
+impl MessageApp {
+
+    pub fn new(port: u16) -> Self { 
+        MessageApp { port }
+    }
+
+    pub fn run(&self) -> std::io::Result<()> {
+        println!("Starting http server: 127.0.0.1:{}", self.port);
+        HttpServer::new(move || {
+            App::new()
+                .wrap(middleware::Logger::default())
+                .service(index)
+        })
+            .bind(("127.0.0.1", self.port))?
+            .workers(8)
+            .run()
+    }
+
+}
+#+end_src
+
+A type can have multiple /impl/ blocks associated to it, typically with a single main one and others for trait implementation.
+
+
+***Self
+
+#+begin_src rust
+impl MessageApp {
+
+    pub fn new(port: u16) -> Self { 
+        MessageApp { port }
+    }
+...
+    #+end_src
+
+The first method defined is called /new/ which takes a port parameters and returns the special type /Self/
+Inside and /impl/ block the /Self/ has special meaning, it refers to the type on which we are defining the implementation.
+
+Non-idiomatically, the signature could also be (though unconventional):
+
+#+begin_src rust
+pub fn new(port: u16) -> MessageApp
+#+end_src
+
+** Instance methods
+Next we defined /run/ which takes the special parameter /&self/ and returns a /std::io::Result/.
+
+#+begin_src rust
+...
+
+    pub fn run(&self) -> std::io::Result<()> {
+        println!("Starting http server: 127.0.0.1:{}", self.port);
+        HttpServer::new(move || {
+            App::new()
+                .wrap(middleware::Logger::default())
+                .service(index)
+        })
+            .bind(("127.0.0.1", self.port))?
+            .workers(8)
+            .run()
+    }
+...
+    #+end_src
+    
+Inside an /impl/ block there are a few different special valeus which can be the first parameter to functions to signify that those function are actually instance methods.
+Note that /NOT/ taking /self/ implies that the method is actually on the type rather than a particular instance.
+
+** All of the selfs
+
+There are four special first parameter values: /&self/, /self/, /&mut self/, and /mut self/. All of the forms trun a function in a method on an instance of the type.
+This means that rather than being a function on the type which is called called /MessageApp::new/, we need to have constructed an instance of the type and then use dot syntax to call the method and set the first parameter. I.e. we could call the instance explicity, but it is uncommon to have to do this.
+
+#+begin_src rust
+MessageApp::run(&app)
+#+end_src
+
+- /&self/ is the most common form. This means that our method takes an immutable reference to the instance invoking the method. Ie. we can read the data inside the type, but we cannot alter it. Note that the calling code also maintains ownership so we are just borrowing the instance.
+
+- /self/ means that the method consumes /self/ and therefor the instance that the method is being called on has its ownership moved into the method. This form is typically used when transforming a type into something else, for example with interfaces that use the builder pattern.
+  
+- /&mut self/ is the mutable version of /&self/ and is the second most common form. Our method can read and write the data inside our type, but it does not own the vbalue so this access is only temporary. 
+
+  /mut self/ means that this method consumes /self/ and /self/ is mutable within the method. All parameters to this functions can be declared mutable if you wish themn to be a mutable binding inside the function, and /self/ is no different. This form is uncommon.
+
+** Understanding Closures
+Closures in Rust can be tricky because of the ownership and borrowing semantics. The basic syntax is to declare an argument list between pipes, /||/, then possibly list the return value followed by the function body between curly braces.
+
+***Note - Type inference works on closures so we can usually omit types of the arguments and return values.
+
+If the keyword /move/ comes before the argument list then any variables from the enviroment that the closure uses are actually moved into the closure. This means that closures take ownership of those variables rather than creating references.
+
+Without the /move/ keyword, variables closed over are actually just references to the surrounding environment.
+
+The /move/ keyword signifies the intent that the function should not have referencves to the environment in which it was created.
+
+For example,
+
+Inside this closure we construct an /App/ which is the abstraction /actix-web/ defines for representing a collection of routes and their handlers. 
+The /wrap/ function wraps the app with middleware specified as its only argument. 
+
+Like direnv but for your functions.
+#+begin_src rust
+...
+        HttpServer::new(move || {
+            App::new()
+                .wrap(middleware::Logger::default())
+                .service(index)
+        })
+...
+#+end_src
+
+
+** Syntax for working with Results /?/
+The /Result/ type is quite special in Rust to the point of having special syntax for the common pattern of returning an error early if one occurred or otherwise pulling the value out of the /Ok/ case and continuing on. The function /bind/ returns a /Results/, by putting the /?/ after the call, we are saying that if the returned /Result/ is the /Err/ variant, then just return early with that value.
+
+This is a replacement for the less convenient
+
+#+begin_src rust
+let result = HttpServer::new(move || {
+    ...
+}).bind("127.0.0.1", self.port());
+if result.is_err() {
+    return Err(result.err().unwrap());
+}
+result.unwrap().workers(8).run()
+#+end_src
+
+** Creating our Handler
+
+Define a default response message
+#+begin_src rust
+#[derive(Serialize)]
+struct IndexResponse {
+    message: String,
+}
+#+end_src
+
+We create a struct which will be the Rust representation of our response, one field with the name /message/ with a /String/ value. We then use a special attribute on the struct to derive the /Serialize/ trait which we imported earlier from Serde.
+
+** Attributes
+Attributes are the way of attaching metadata to a variety of things in the language.
+They can be attached to modules as a whole, structs, functions, and several otehr constructs.
+
+Example of applying the /allow/ attribute
+#+begin_src rust
+fn some_unused_variable() {
+    #![allow(unused_variables)]
+    let x = ();
+}
+#+end_src
+
+The /derive/ attribute is probably the most common attribute. It allows you to implement traits for types without having to do any more work provided the type meets the requirements for the trait to be derived.
+
+It is possible to write custom derive logic so that your own traits can be derivable.
+Deriving traits is only one use of the attribute system. There are many other attributes builtin to the compiler for doing things like giving inlining hints and conditional compilation for different architectures.
+
+For example,
+#+begin_src rust
+#[get("/")]
+fn index(req: HttpRequest) -> Result<web::Json<IndexResponse>> {
+    let hello = req.headers().get("hello")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_else(|| "world");
+    Ok(web::Json(IndexResponse {
+        message: hello.to_owned(),
+    }))
+}
+#+end_src
+
+Actix provides a few attributes for colocating routing information with the handler function. This is how we were able to call service(index) without any more information about the type of request or the path.
+
+** Working with Options
+The idea of /Option/ is to represent the possibility of something not always existing and hence replaces the need for the concept of null found in many other programming languages.
+The difference between null in other languages and /Option/ in Rust is that an /Option/ is an explicit type that has a /None/ variant that you must deal with and thus the concept of null cannot inhabit other types.
+
+/Option/ is the other main error handling primitive that complements /Result/
+
+/and_then/ is used on /Option/ to call a function with the value inside of the option if there is one. In other words, if the header exists, we call our closure with the value, otherwise /and_then/ is a no-op on /None/.
+#+begin_src rust
+#[get("/")]
+fn index(req: HttpRequest) -> Result<web::Json<IndexResponse>> {
+    let hello = req.headers().get("hello")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_else(|| "world");
+    Ok(web::Json(IndexResponse {
+        message: hello.to_owned(),
+    }))
+}
+#+end_src
+
+
