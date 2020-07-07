@@ -51,10 +51,8 @@ type Result<T> = Result<T, std::io::Error>;
 #+end_src
 This is a /struct/ defined in the std::io module used for representing errors from I/O operations. This is called /Type Aliasing/, which is used for syntactic convenience when using fixed variants of a given type. In the above example, Result is aliased to a predefined Error variant meaning only  /T/ will require inference.
 
-
 ** Ok
 The /Ok/ variant has type /()/ which is known as the /empty/ /tuple/. This result type essentially only descriminates successes from failures similiar to how C programs return 0 for a success or a non-zero for failure.
-
 
 ** Starting the App
 
@@ -221,7 +219,6 @@ Like direnv but for your functions.
 ...
 #+end_src
 
-
 ** Syntax for working with Results /?/
 The /Result/ type is quite special in Rust to the point of having special syntax for the common pattern of returning an error early if one occurred or otherwise pulling the value out of the /Ok/ case and continuing on. The function /bind/ returns a /Results/, by putting the /?/ after the call, we are saying that if the returned /Result/ is the /Err/ variant, then just return early with that value.
 
@@ -281,23 +278,137 @@ fn index(req: HttpRequest) -> Result<web::Json<IndexResponse>> {
 
 Actix provides a few attributes for colocating routing information with the handler function. This is how we were able to call service(index) without any more information about the type of request or the path.
 
-** Working with Options
+** Working with Options and Borrowed vs Owned types
 The idea of /Option/ is to represent the possibility of something not always existing and hence replaces the need for the concept of null found in many other programming languages.
 The difference between null in other languages and /Option/ in Rust is that an /Option/ is an explicit type that has a /None/ variant that you must deal with and thus the concept of null cannot inhabit other types.
 
 /Option/ is the other main error handling primitive that complements /Result/
 
 /and_then/ is used on /Option/ to call a function with the value inside of the option if there is one. In other words, if the header exists, we call our closure with the value, otherwise /and_then/ is a no-op on /None/.
+
 #+begin_src rust
 #[get("/")]
 fn index(req: HttpRequest) -> Result<web::Json<IndexResponse>> {
     let hello = req.headers().get("hello")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_else(|| "world");
-    Ok(web::Json(IndexResponse {
-        message: hello.to_owned(),
+        .and_then( // closure passed to and_then needs to return Option
+|v| v.to_str() // Result type is returned
+.ok() // use .ok method of result to convert to variant of Option
+)
+        .unwrap_or_else(|| "world") //unwrap and return data inside the the Some variant of the Option
+;
+    Ok(web::Json(IndexResponse { // need to convert &str to str -> ie. borrowed string to owned string so we can return the data as a response.
+        message: hello.to_owned(),  // use to_owned() to convert &str to str 
     }))
 }
 #+end_src
 
 
+
+
+*** A Note on Ownership
+The most primitive string type is named /str/ and is known as a string slice. A string slice is a slice of bytes, ie /u8/ and it also is valid Unicode.
+The /str/ type is almost always encountered as the /borrowed variant &str/ whcih is a refernce to a valid Unicode byte array. The reference means that it points
+to memeory owned by someone else. In particular stastic string literals are represented with type /&'static str/ where the notation /&'static/ means a reference 
+to something with a static lifetime. The static lifetime is a special lifetime in Rust which is the entire life of you program. Static strings are compiled into your binary and are 
+therefore owned by the binary.
+
+
+
+** Example Requests
+Start the application with cargo run and perform an example request with:
+
+#+begin_src sh
+curl localhost:8080
+#+end_src
+
+#+begin_src sh
+curl -H "hello: actix" localhost:8080
+#+end_src
+* Adding State to Our Web App
+** Adding State
+First we import some facilities for managing state
+#+begin_src rust
+use actix_web::{middleware, web, App, HttpServer, Result};
+use serde::Serialize;
+use std::cell::Cell;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+#+end_src
+
+One piece of state we want to manage is a uniuque /usize/ for each worker in this application. We will create an atomic /usize/ to track this count of workers because it needs to be thread-safe - however, it only ever need to 
+increase - making it a good use case for an Atomic Integer.
+
+#+begin_src rust
+static SERVER_COUNTER: AtomicUsize = AtomicUsize::new(0);
+#+end_src
+** Static vs. Const
+Both /const/ and /static/ variables live for the entire lifespan of the program. However, /const/ items are effectively inlinedf at each site they are used. Therefore references to the same constant do not necessarily point to the same memory address.
+/static/ items are not inlined, they have a fixed address as there is only one instance for each value. Hence /static/ must be used for a shared global variable.
+
+Note that it is possible to have /static mut/ variables, but mutable global variables are generally unsafe - so
+in order to use them the /unsafe/ keyword must prefix such variables in order to perform read/write operations.
+
+Atomics however can be modified safely without the use of the /mut/ keyword - which, by itself, is a compiler flag used by the compiler so that it can make certain safety garuntees.
+
+** Defining the AppState Struct
+
+#+begin_src rust
+struct AppState {
+server_id: usize,
+request_count: Cell<usize>,
+messages: Arc<Mutex<Vec<String>>>,
+}
+#+end_src
+
+Each worker thread gets its own instance of this state struct. Actix takes an application factory because it will create many instances of the application, and therefore many instances of the state struct.
+
+The request count is owned by each worker and changes are not meant to be shared across threads, however, we do want to mutate this value within a single request.
+
+Rust has a pattern for mutating a piece of data inside a struct which itself is immutable known as /interior mutability/. Two special types enable this, /Cell/ and /RefCell.Cell/ which enable interior mutability by moving values in and out of a shared memory location. /RefCell/ implemnts interior mutability by using borrow checking at runtime to enfore the constraint that only one mutable refernce can be live at any given time.
+
+***Take advantage of /Cell/ copying the value in and out and avoid the overhead of the extra lock associated with the /RefCell.Cell/ and /RefCell/.
+
+** Sharing Across Threads
+Since we need shared global state for our workers, we need to coordinate state access for thread safety. We can ensure mutally exclusive access to the vector containing our state by creating a /Mutex/ that wraps our vector. /Mutex<Vec<String>>/ is a type that provides an interface for coordinating access to the inner object (Vec<String>) across multiple threads.
+
+Additionally, we want to share ownership of this vector. Typically each value in Rust has a single owner, but for this situation we want each thread to be an owner of the data so that the vector lives until the last worker thread exits. The mechanism for this in Rust is to use a reference counted pointer. There are two variants: /Rc/ and /Arc/. The /A/ in /Arc/ stands for /Atomic/ and it from a regular /Rc/ in that it can be shared across threads. They are both generic over a type T and provide a reference counted pointer to a value of type T allocated on the heap. 
+
+Note that as Rust does not have a garbage collector, it is possible to create memory leaks by creating cycles of reference counted pointers. There is a non-owning variant called /Weak/ that can break such cycles.
+
+
+** Extracting Data from Requests
+
+Setup handler to use defined state
+#+begin_src rust
+#[derive(Serialize)]
+struct IndexResponse {
+server_id: usize,
+request_count: size, 
+messages: Vec<String>,
+}
+#+end_src
+
+
+Extract Data from Request
+#+begin_src rust
+#[get("/")]
+fn index(state: web::Data<AppState>) -> Result<web::Json<IndexResponse>> {
+    let request_count = state.request_count.get() + 1;
+    state.request_count.set(request_count);
+    let ms = state.messages.lock().unwrap();
+
+    Ok(web::Json(IndexResponse {
+        server_id: state.server_id,
+        request_count,
+        messages: ms.clone(),
+    }))
+}
+#+end_src
+
+We updated the signature of our function to take the state as input while still returning a JSON representation of our response struct. Note that we just define the state from the input parameter of our handler to be the state rather than having to figure out how to get that from our server or the request.
+
+Extractors are the mechanism that allows this - they are a type that implement the trait /FromRequest/ which allows types to define how they are constructed from a request. This turns out to be a powerful and safe abstrction because the compiler is able to provide a lot of guarantees about what data is and is not available. Any type that implements /FromRequest/ can technically fail to extract said type and thus uses /Result/ in the implematation.
+
+
+
+ 
